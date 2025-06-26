@@ -50,6 +50,9 @@ sock.sendto(init_msg, (SERVER_IP, SERVER_PORT))
 
 print("Verbonden met TORCS op poort 3001. Wachten op sensordata...")
 
+prev_steering = 0.0  # Voor low-pass filter
+alpha = 1  # mate van demping, 0.0 = geen demping, 1.0 = alleen nieuwe waarde
+
 while True:
     data, addr = sock.recvfrom(1024)
     msg = data.decode()
@@ -70,6 +73,8 @@ while True:
     speed = get_value('speedX')
     track_pos = get_value('trackPos')
     angle = get_value('angle')
+    rpm = get_value('rpm')
+    gear = int(get_value('gear', 1))
     # Track sensors (19 waardes)
     import re
     track_match = re.search(r'(track\s+([^)]+))', msg)
@@ -93,11 +98,22 @@ while True:
     X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
     with torch.no_grad():
         action = model(X_tensor).cpu().numpy()[0]
-    acceleration = float(np.clip(action[0], 0, 1))
-    brake = float(np.clip(action[1], 0, 1))
+    acceleration = float(np.clip(action[0], 0.7, 1))
+    brake = float(np.clip(action[1], 0, 0))
     steering = float(action[2])
 
+    # Low-pass filter op stuurinput
+    steering = alpha * steering + (1 - alpha) * prev_steering
+    prev_steering = steering
+
+    # Simpele schakellogica
+    new_gear = gear
+    if rpm > 8000:
+        new_gear += 1
+    elif rpm < 5000 and gear > 1:
+        new_gear -= 1
+
     # Bouw actie-string voor TORCS
-    action_str = f"(accel {acceleration}) (brake {brake}) (steer {steering})\n"
+    action_str = f"(accel {acceleration}) (brake {brake}) (steer {steering}) (gear {new_gear})\n"
     print("Actie naar TORCS:", action_str.strip())
     sock.sendto(action_str.encode(), (SERVER_IP, SERVER_PORT))
