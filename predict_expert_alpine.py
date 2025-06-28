@@ -3,6 +3,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import joblib
+import csv
+import os
 
 # TORCS server settings
 SERVER_IP = 'localhost'
@@ -27,7 +29,6 @@ class TorcsNet(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 32),
-            nn.ReLU(),
             nn.Linear(32, 3),
             nn.Tanh()
         )
@@ -49,6 +50,14 @@ init_msg = b'SCR\n'
 sock.sendto(init_msg, (SERVER_IP, SERVER_PORT))
 
 print("Verbonden met TORCS op poort 3001. Wachten op sensordata...")
+
+LOG_PATH = "log.csv"
+# Maak logbestand aan en schrijf header (overschrijft bij elke run)
+with open(LOG_PATH, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        "timestamp", "speed", "track_pos", "angle", "rpm", "gear", "acceleration", "brake", "steering", "new_gear"
+    ])
 
 prev_steering = 0.0  # Voor low-pass filter
 alpha = 1  # mate van demping, 0.0 = geen demping, 1.0 = alleen nieuwe waarde
@@ -98,7 +107,7 @@ while True:
     X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
     with torch.no_grad():
         action = model(X_tensor).cpu().numpy()[0]
-    acceleration = float(np.clip(action[0], 0.7, 1))
+    acceleration = float(np.clip(action[0], 0.8, 1))
     brake = float(np.clip(action[1], 0, 0))
     steering = float(action[2])
 
@@ -112,6 +121,15 @@ while True:
         new_gear += 1
     elif rpm < 5000 and gear > 1:
         new_gear -= 1
+
+    # Log naar CSV (altijd uitvoeren, vóór continue/return!)
+    import time
+    print(f"LOG: {speed=}, {track_pos=}, {angle=}, {rpm=}, {gear=}, {acceleration=}, {brake=}, {steering=}, {new_gear=}")
+    with open(LOG_PATH, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            time.time(), speed, track_pos, angle, rpm, gear, acceleration, brake, steering, new_gear
+        ])
 
     # Bouw actie-string voor TORCS
     action_str = f"(accel {acceleration}) (brake {brake}) (steer {steering}) (gear {new_gear})\n"
