@@ -5,13 +5,14 @@ import torch.nn as nn
 import joblib
 import csv
 import os
+import time
 
 # TORCS server settings
 SERVER_IP = 'localhost'
 SERVER_PORT = 3001
 
-MODEL_PATH = "alpine_expert_model.pt"
-SCALER_PATH = "alpine_expert_scaler.save"
+MODEL_PATH = "expert_model.pt"
+SCALER_PATH = "expert_scaler.save"
 
 feature_cols = [
     "SPEED", "TRACK_POSITION", "ANGLE_TO_TRACK_AXIS"
@@ -29,6 +30,7 @@ class TorcsNet(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 32),
+            nn.ReLU(),
             nn.Linear(32, 3),
             nn.Tanh()
         )
@@ -51,18 +53,21 @@ sock.sendto(init_msg, (SERVER_IP, SERVER_PORT))
 
 print("Verbonden met TORCS op poort 3001. Wachten op sensordata...")
 
-LOG_PATH = "log.csv"
+current_time = time.strftime("%Y%m%d_%H%M%S")
+LOG_PATH = f"log_{current_time}.csv"
 # Maak logbestand aan en schrijf header (overschrijft bij elke run)
 with open(LOG_PATH, "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow([
-        "timestamp", "speed", "track_pos", "angle", "rpm", "gear", "acceleration", "brake", "steering", "new_gear"
+        "timestamp", "lap", "speed", "track_pos", "angle", "rpm", "gear", "acceleration", "brake", "steering", "new_gear"
     ])
 
 prev_steering = 0.0  # Voor low-pass filter
 alpha = 1  # mate van demping, 0.0 = geen demping, 1.0 = alleen nieuwe waarde
+total_laps = 10 # Aantal rondes om te rijden
+lap = 1  # Huidige ronde
 
-while True:
+while True and lap <= total_laps:
     data, addr = sock.recvfrom(1024)
     msg = data.decode()
     if not msg.strip().startswith('('):
@@ -84,6 +89,12 @@ while True:
     angle = get_value('angle')
     rpm = get_value('rpm')
     gear = int(get_value('gear', 1))
+    last_lap_time = get_value('lastLapTime', 0.0)
+    meta = 0
+    if last_lap_time > 0:
+        meta = 1
+        lap += 1
+
     # Track sensors (19 waardes)
     import re
     track_match = re.search(r'(track\s+([^)]+))', msg)
@@ -105,10 +116,11 @@ while True:
     X = np.array([[feature_dict[col] for col in feature_cols]], dtype=np.float32)
     X_scaled = scaler.transform(X)
     X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
+    # pick device
     with torch.no_grad():
         action = model(X_tensor).cpu().numpy()[0]
-    acceleration = float(np.clip(action[0], 0.8, 1))
-    brake = float(np.clip(action[1], 0, 0))
+    acceleration = float(np.clip(action[0], 0.4, 0.8))
+    brake = float(np.clip(action[1], 0, 0.5))
     steering = float(action[2])
 
     # Low-pass filter op stuurinput
@@ -128,10 +140,13 @@ while True:
     with open(LOG_PATH, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            time.time(), speed, track_pos, angle, rpm, gear, acceleration, brake, steering, new_gear
+            time.time(), lap, speed, track_pos, angle, rpm, gear, acceleration, brake, steering, new_gear
         ])
 
     # Bouw actie-string voor TORCS
-    action_str = f"(accel {acceleration}) (brake {brake}) (steer {steering}) (gear {new_gear})\n"
+    action_str = f"(accel {acceleration}) (brake {brake}) (steer {steering}) (gear {new_gear}) (meta {meta})\n"
     print("Actie naar TORCS:", action_str.strip())
     sock.sendto(action_str.encode(), (SERVER_IP, SERVER_PORT))
+    if meta == 1:
+        time.sleep(2)  # Wacht even na een nieuwe ronde
+        sock.sendto(init_msg, (SERVER_IP, SERVER_PORT))

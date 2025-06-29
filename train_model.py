@@ -7,10 +7,9 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 import joblib
 
-# Pad naar Alpine_Track_1.csv
 CSV_PATH = "combined_data_cleaned.csv"
-MODEL_PATH = "alpine_expert_model.pt"
-SCALER_PATH = "alpine_expert_scaler.save"
+MODEL_PATH = "expert_model.pt"
+SCALER_PATH = "expert_scaler.save"
 
 # Laad data
 print(f"Laad data uit {CSV_PATH}...")
@@ -86,7 +85,6 @@ for epoch in range(epochs):
     for X_batch, Y_batch in dataloader:
         optimizer.zero_grad()
         outputs = model(X_batch)
-        # Outputs: accel/brake [0,1], steering [-1,1]
         outputs_clipped = outputs.clone()
         outputs_clipped[:,0] = torch.clamp(outputs[:,0], 0, 1)
         outputs_clipped[:,1] = torch.clamp(outputs[:,1], 0, 1)
