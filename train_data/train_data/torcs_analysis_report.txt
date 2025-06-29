@@ -1,0 +1,102 @@
+
+# TORCS Data Analysis Report - Quick Summary
+Generated for Thesis Chapter 6 - Input Data Analysis
+
+## Dataset Overview
+- Total samples: 199,135
+- Total simulation time: 3982.7 seconds
+- Number of track files: 17
+- Unique track types: 6
+
+## Data Quality
+- Data completeness: 99.86%
+- Off-track samples: 16 (0.0%)
+- Missing values after cleaning: 7,300
+
+## Performance Metrics
+- Average speed: 148.10 ± 58.64 m/s
+- Speed range: -44.2 - 291.6 m/s
+- Average acceleration: 0.627
+- Average brake usage: 0.047
+
+## Top 5 Speed Correlations
+2. TRACK_EDGE_9: 0.5076
+3. ANGLE_TO_TRACK_AXIS: 0.4149
+4. TRACK_EDGE_0: 0.3220
+5. TRACK_EDGE_1: 0.3175
+6. TRACK_EDGE_2: 0.3125
+
+## Top 5 Feature Importance (Random Forest)
+1. TRACK_EDGE_9: 0.3269
+2. TRACK_EDGE_7: 0.1865
+3. ANGLE_TO_TRACK_AXIS: 0.0777
+4. TRACK_EDGE_11: 0.0555
+5. TRACK_EDGE_8: 0.0525
+
+## Track Type Performance
+- corners: 115.5 m/s (n=49,234)
+- oval: 207.8 m/s (n=13,496)
+- mixed: 185.9 m/s (n=5,750)
+- multi_car: 191.8 m/s (n=26,277)
+- sprint: 150.3 m/s (n=41,034)
+- road_course: 137.8 m/s (n=63,344)
+
+## Racing Line Analysis
+Optimal track position by speed range:
+- Very Low: +0.040
+- Low: -0.146
+- Medium: -0.064
+- High: -0.002
+- Very High: -0.143
+
+Corner vs Straight Performance:
+- Corner speed: 124.2 m/s
+- Straight speed: 157.5 m/s
+- Speed difference: 33.3 m/s
+
+## Sensor Analysis
+- Track edge sensors: 19 available
+- Off-track reliability threshold: |track_position| > 1.0
+- Unreliable sensor readings: 16 (0.0%)
+
+## Control Input Efficiency
+- Simultaneous brake/throttle: 0.14%
+- Control efficiency rate: 99.86%
+
+## Files Generated
+- torcs_cleaned_dataset.csv: Complete cleaned dataset
+- torcs_summary_statistics.csv: Descriptive statistics
+- torcs_correlation_matrix.csv: Feature correlations
+- torcs_feature_importance.csv: ML feature importance scores
+- torcs_quick_analysis.png: Visualization dashboard
+- torcs_analysis_report.txt: This report
+
+## Recommendations for Neural Network
+Based on this analysis, the top features for your neural network input layer should be:
+ 1. TRACK_EDGE_9 (importance: 0.3269)
+ 2. TRACK_EDGE_7 (importance: 0.1865)
+ 3. ANGLE_TO_TRACK_AXIS (importance: 0.0777)
+ 4. TRACK_EDGE_11 (importance: 0.0555)
+ 5. TRACK_EDGE_8 (importance: 0.0525)
+ 6. TRACK_EDGE_10 (importance: 0.0487)
+ 7. TRACK_EDGE_12 (importance: 0.0430)
+ 8. TRACK_EDGE_13 (importance: 0.0228)
+ 9. TRACK_EDGE_0 (importance: 0.0219)
+10. TRACK_EDGE_6 (importance: 0.0192)
+
+## Key Insights for Autonomous Driver Development
+1. Speed is the primary performance indicator (correlation analysis)
+2. Central track edge sensors (TRACK_EDGE_8-10) most important for obstacle avoidance
+3. Lateral sensors (TRACK_EDGE_0-3, 15-18) crucial for lane positioning
+4. Optimal racing line varies with speed: -0.146 to 0.040
+5. Corner entry speed averaging 124.2 m/s vs 157.5 m/s on straights
+6. High control efficiency (99.9%) indicates good training data quality
+
+## Statistical Validation
+- Dataset size sufficient for ML training: 199,135 samples
+- Diverse track scenarios represented: 6 types
+- Low missing data rate: 0.136%
+- Acceptable off-track rate: 0.0%
+
+This analysis provides a solid foundation for autonomous TORCS driver development
+with high-quality, diverse training data suitable for neural network training.
