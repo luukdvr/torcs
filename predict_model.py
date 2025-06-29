@@ -13,6 +13,7 @@ SERVER_PORT = 3001
 
 MODEL_PATH = "expert_model.pt"
 SCALER_PATH = "expert_scaler.save"
+CURRENT_TRACK = "alpine-2"
 
 feature_cols = [
     "SPEED", "TRACK_POSITION", "ANGLE_TO_TRACK_AXIS"
@@ -54,20 +55,19 @@ sock.sendto(init_msg, (SERVER_IP, SERVER_PORT))
 print("Verbonden met TORCS op poort 3001. Wachten op sensordata...")
 
 current_time = time.strftime("%Y%m%d_%H%M%S")
-LOG_PATH = f"log_{current_time}.csv"
+LOG_PATH = f"log_{CURRENT_TRACK}_{current_time}.csv"
+
 # Maak logbestand aan en schrijf header (overschrijft bij elke run)
 with open(LOG_PATH, "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow([
-        "timestamp", "lap", "speed", "track_pos", "angle", "rpm", "gear", "acceleration", "brake", "steering", "new_gear"
+        "timestamp", "speed", "track_pos", "angle", "rpm", "gear", "acceleration", "brake", "steering", "new_gear"
     ])
 
 prev_steering = 0.0  # Voor low-pass filter
-alpha = 1  # mate van demping, 0.0 = geen demping, 1.0 = alleen nieuwe waarde
-total_laps = 10 # Aantal rondes om te rijden
-lap = 1  # Huidige ronde
+alpha = 1.0  # mate van demping, 0.0 = geen demping, 1.0 = alleen nieuwe waarde
 
-while True and lap <= total_laps:
+while True:
     data, addr = sock.recvfrom(1024)
     msg = data.decode()
     if not msg.strip().startswith('('):
@@ -90,10 +90,6 @@ while True and lap <= total_laps:
     rpm = get_value('rpm')
     gear = int(get_value('gear', 1))
     last_lap_time = get_value('lastLapTime', 0.0)
-    meta = 0
-    if last_lap_time > 0:
-        meta = 1
-        lap += 1
 
     # Track sensors (19 waardes)
     import re
@@ -120,7 +116,7 @@ while True and lap <= total_laps:
     with torch.no_grad():
         action = model(X_tensor).cpu().numpy()[0]
     acceleration = float(np.clip(action[0], 0.4, 0.8))
-    brake = float(np.clip(action[1], 0, 0.5))
+    brake = float(np.clip(action[1], 0, 0))
     steering = float(action[2])
 
     # Low-pass filter op stuurinput
@@ -140,13 +136,10 @@ while True and lap <= total_laps:
     with open(LOG_PATH, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            time.time(), lap, speed, track_pos, angle, rpm, gear, acceleration, brake, steering, new_gear
+            time.time(), speed, track_pos, angle, rpm, gear, acceleration, brake, steering, new_gear
         ])
 
     # Bouw actie-string voor TORCS
-    action_str = f"(accel {acceleration}) (brake {brake}) (steer {steering}) (gear {new_gear}) (meta {meta})\n"
+    action_str = f"(accel {acceleration}) (brake {brake}) (steer {steering}) (gear {new_gear})\n"
     print("Actie naar TORCS:", action_str.strip())
     sock.sendto(action_str.encode(), (SERVER_IP, SERVER_PORT))
-    if meta == 1:
-        time.sleep(2)  # Wacht even na een nieuwe ronde
-        sock.sendto(init_msg, (SERVER_IP, SERVER_PORT))
