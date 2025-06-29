@@ -4,8 +4,6 @@ import torch
 import torch.nn as nn
 import joblib
 import csv
-import os
-import time
 
 # TORCS server settings
 SERVER_IP = 'localhost'
@@ -13,7 +11,6 @@ SERVER_PORT = 3001
 
 MODEL_PATH = "expert_model.pt"
 SCALER_PATH = "expert_scaler.save"
-CURRENT_TRACK = "alpine-2"
 
 feature_cols = [
     "SPEED", "TRACK_POSITION", "ANGLE_TO_TRACK_AXIS"
@@ -54,18 +51,16 @@ sock.sendto(init_msg, (SERVER_IP, SERVER_PORT))
 
 print("Verbonden met TORCS op poort 3001. Wachten op sensordata...")
 
-current_time = time.strftime("%Y%m%d_%H%M%S")
-LOG_PATH = f"log_{CURRENT_TRACK}_{current_time}.csv"
-
+LOG_PATH = "log.csv"
 # Maak logbestand aan en schrijf header (overschrijft bij elke run)
 with open(LOG_PATH, "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow([
-        "timestamp", "speed", "track_pos", "angle", "rpm", "gear", "acceleration", "brake", "steering", "new_gear"
+        "timestamp", "speed", "track_pos", "abs_track_pos", "angle", "rpm", "gear", "acceleration", "brake", "steering", "abs_steering", "new_gear", "off_track"
     ])
 
 prev_steering = 0.0  # Voor low-pass filter
-alpha = 1.0  # mate van demping, 0.0 = geen demping, 1.0 = alleen nieuwe waarde
+alpha = 0.9  # mate van demping, 0.0 = geen demping, 1.0 = alleen nieuwe waarde
 
 while True:
     data, addr = sock.recvfrom(1024)
@@ -89,8 +84,6 @@ while True:
     angle = get_value('angle')
     rpm = get_value('rpm')
     gear = int(get_value('gear', 1))
-    last_lap_time = get_value('lastLapTime', 0.0)
-
     # Track sensors (19 waardes)
     import re
     track_match = re.search(r'(track\s+([^)]+))', msg)
@@ -112,11 +105,10 @@ while True:
     X = np.array([[feature_dict[col] for col in feature_cols]], dtype=np.float32)
     X_scaled = scaler.transform(X)
     X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
-    # pick device
     with torch.no_grad():
         action = model(X_tensor).cpu().numpy()[0]
-    acceleration = float(np.clip(action[0], 0.4, 0.8))
-    brake = float(np.clip(action[1], 0, 0))
+    acceleration = float(np.clip(action[0], 0.4, 1))
+    brake = float(np.clip(action[1], 0, 1))
     steering = float(action[2])
 
     # Low-pass filter op stuurinput
@@ -130,13 +122,18 @@ while True:
     elif rpm < 5000 and gear > 1:
         new_gear -= 1
 
+    # Extra logging voor analyse
+    abs_track_pos = abs(track_pos)
+    abs_steering = abs(steering)
+    off_track = int(abs_track_pos > 1)
+
     # Log naar CSV (altijd uitvoeren, vóór continue/return!)
     import time
-    print(f"LOG: {speed=}, {track_pos=}, {angle=}, {rpm=}, {gear=}, {acceleration=}, {brake=}, {steering=}, {new_gear=}")
+    print(f"LOG: {speed=}, {track_pos=}, {abs_track_pos=}, {angle=}, {rpm=}, {gear=}, {acceleration=}, {brake=}, {steering=}, {abs_steering=}, {new_gear=}, {off_track=}")
     with open(LOG_PATH, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            time.time(), speed, track_pos, angle, rpm, gear, acceleration, brake, steering, new_gear
+            time.time(), speed, track_pos, abs_track_pos, angle, rpm, gear, acceleration, brake, steering, abs_steering, new_gear, off_track
         ])
 
     # Bouw actie-string voor TORCS
